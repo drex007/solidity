@@ -1,41 +1,61 @@
 //Allow Users deposit fund
 //Allow a person that deployed contract to make withrawal
-//set a mininum deposit value in usd
+//set a mininum deposit value in usd 
 
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.8;
-import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
+import "./PriceConverter.sol";
+
+
+error NotOwner();
 contract FundMe {
-    uint256 public mininumUsd = 50;
 
-    function fund() public payable {
-        require(msg.value >= mininumUsd, "You didint send enough eth "); // Thats the value of 1 Eth
-    }
+    using PriceConverter for uint256;
 
-    function getPrice() public view returns (uint256) {
-        //ABI
-        //Address 0x8A753747A1Fa494EC906cE90E9f37563A8AF630e
-        AggregatorV3Interface priceFeed = AggregatorV3Interface(
-            0x8A753747A1Fa494EC906cE90E9f37563A8AF630e
-        );
-        (, int256 price, , , ) = priceFeed.latestRoundData();
-        return uint256(price * 1e10);
-    }
-    function getVersion() public view returns (uint256) {
-        AggregatorV3Interface priceFeed = AggregatorV3Interface(
-            0x8A753747A1Fa494EC906cE90E9f37563A8AF630e
-        );
-        return priceFeed.version();
+    address[] public funders;
+
+    mapping(address=>uint256) public addressToAmountMap;
+
+    uint256 public mininumUsd = 50 * 1e18; //We can addd constant or immutable keyword after our public keyword inorder to reduce he cost of gas 
+    address public owner; // We can aslo add constant or immutable keyword here
+
+    constructor(){
+        owner = msg.sender;
     }
 
-    function getConversionRate(uint256 ethAmount)
-        public
-        view
-        returns (uint256)
-    {
-        uint256 ethPrice = getPrice();
-        uint256 ethAmountInUsd = (ethPrice * ethAmount) / 1e18;
-        return ethAmountInUsd;
+    function fund() public payable{
+        require(msg.value.getConversionRate() >= mininumUsd, "You didint send enough eth "); // Thats the value of 1 Eth
+        funders.push(msg.sender);
+        addressToAmountMap[msg.sender]= msg.value;
     }
+
+    function withdraw() public onlyOwner {
+        //(startingIndex, EndingIndex, Step)
+        for(uint256 funderIndex=0; funderIndex < funders.length; funderIndex++){
+            address funder = funders[funderIndex]; // Get the address using using the fund index 
+            addressToAmountMap[funder] = 0; // Use the address gotten from funders list to set the amount of adress in map to zero
+
+        }
+
+        funders = new address[](0);
+
+        //transfer funds to  the address that deployed the contract 
+        // bool sendSuccess = payable(msg.sender).transfer(address(this).balance); //using transfer method to send 
+        // require(sendSuccess, "Send fail")
+
+        // bool sendSuccess = payable(msg.sender).send(address(this).address); // using the send method to send fnds 
+
+        (bool callSuccess,) = payable(msg.sender).call{value: address(this).balance}(""); // sing the call method to send funds 
+        require(callSuccess, "called failed"); // \when call meyhods fails it retuns called failed 
+
+    }
+
+    modifier onlyOwner {
+        require(msg.sender == owner, "Failed Transaction, You must be owner");
+        _;
+        // We can use if(msg.sender != owner) {revert NotOwner();} // This alone can replace the require statement in our modifier and it is gas efficient
+
+    }
+
 }
